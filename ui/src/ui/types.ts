@@ -436,6 +436,7 @@ export type GatewaySessionRow = {
   totalTokens?: number;
   totalTokensFresh?: boolean;
   status?: SessionRunStatus;
+  hasActiveRun?: boolean;
   subagentRunState?: SubagentRunState;
   hasActiveSubagentRun?: boolean;
   startedAt?: number;

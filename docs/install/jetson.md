@@ -158,13 +158,12 @@ sudo jetson_clocks                                # optional: pin clocks to max 
 
 **Watch thermals** -- `tegrastats` reports per-zone temperatures and throttling live. Passively cooled modules in enclosures throttle under sustained load; keep a fan on it if you enable `jetson_clocks`.
 
-**Enable module compile cache** -- Speeds up repeated CLI invocations. `OPENCLAW_NO_RESPAWN=1` keeps routine Gateway restarts in-process:
+**Enable module compile cache** -- Speeds up repeated CLI invocations on lower-power hosts:
 
 ```bash
 grep -q 'NODE_COMPILE_CACHE=/var/tmp/openclaw-compile-cache' ~/.bashrc || cat >> ~/.bashrc <<'EOF' # pragma: allowlist secret
 export NODE_COMPILE_CACHE=/var/tmp/openclaw-compile-cache
 mkdir -p /var/tmp/openclaw-compile-cache
-export OPENCLAW_NO_RESPAWN=1
 EOF
 source ~/.bashrc
 ```

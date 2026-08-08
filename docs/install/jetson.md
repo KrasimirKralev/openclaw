@@ -11,14 +11,14 @@ Run a persistent, always-on OpenClaw Gateway on an NVIDIA Jetson. Like any other
 
 ## Hardware compatibility
 
-| Jetson module          | RAM      | Works? | Notes                                                       |
-| ---------------------- | -------- | ------ | ----------------------------------------------------------- |
-| AGX Orin               | 32/64 GB | Best   | Ample headroom for local models alongside the gateway.       |
-| Orin NX                | 8/16 GB  | Great  | Comfortable for gateway + a small local model.               |
-| Orin Nano (Super)      | 8 GB     | Great  | Gateway is light; 8 GB is the practical floor for local LLMs.|
-| Orin Nano              | 4 GB     | Good   | Fine for the gateway. Too tight for local models.            |
-| Xavier NX / AGX Xavier | 8/16 GB  | OK     | Works on JetPack 5 (Ubuntu 20.04); older Node packaging.     |
-| Nano (original, 2019)  | 2/4 GB   | No     | Stuck on JetPack 4 / Ubuntu 18.04 -- not recommended.        |
+| Jetson module          | RAM      | Works? | Notes                                                         |
+| ---------------------- | -------- | ------ | ------------------------------------------------------------- |
+| AGX Orin               | 32/64 GB | Best   | Ample headroom for local models alongside the gateway.        |
+| Orin NX                | 8/16 GB  | Great  | Comfortable for gateway + a small local model.                |
+| Orin Nano (Super)      | 8 GB     | Great  | Gateway is light; 8 GB is the practical floor for local LLMs. |
+| Orin Nano              | 4 GB     | Good   | Fine for the gateway. Too tight for local models.             |
+| Xavier NX / AGX Xavier | 8/16 GB  | OK     | Works on JetPack 5 (Ubuntu 20.04); older Node packaging.      |
+| Nano (original, 2019)  | 2/4 GB   | No     | Stuck on JetPack 4 / Ubuntu 18.04 -- not recommended.         |
 
 **Minimum:** 4 GB RAM, 500 MB free disk, 64-bit JetPack (Ubuntu 20.04 or newer).
 **Recommended:** 8 GB+ RAM, NVMe SSD, Ethernet, JetPack 6 (Ubuntu 22.04).

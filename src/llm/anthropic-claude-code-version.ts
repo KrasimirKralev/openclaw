@@ -1,8 +1,8 @@
-import { execFile } from "node:child_process";
 import {
   deferAnthropicClaudeCodeIdentityUntil,
   setAnthropicClaudeCodeVersion,
 } from "@openclaw/ai/providers";
+import { runCommandWithTimeout } from "../process/exec.js";
 
 /**
  * Report the installed Claude Code's version on the Anthropic OAuth path.
@@ -19,20 +19,30 @@ import {
 
 const CANDIDATE_COMMANDS = ["claude", "claude-code"] as const;
 const PROBE_TIMEOUT_MS = 3_000;
+const PROBE_MAX_OUTPUT_BYTES = 16 * 1024;
 
 export type ClaudeCodeVersionProbe = (command: string) => Promise<string | null>;
 
-const defaultProbe: ClaudeCodeVersionProbe = (command) =>
-  new Promise((resolve) => {
-    execFile(
-      command,
-      ["--version"],
-      { encoding: "utf8", timeout: PROBE_TIMEOUT_MS, maxBuffer: 16 * 1024, windowsHide: true },
-      (error, stdout) => {
-        resolve(error ? null : ((stdout ?? "").trim().split(/\r?\n/u)[0] ?? null));
-      },
-    );
-  });
+// The shared command runner owns the launcher rules a bare spawn does not have:
+// npm installs Claude Code as a `claude.cmd` shim, which only its trusted
+// cmd.exe wrapping can start, and it also hides the console window.
+const defaultProbe: ClaudeCodeVersionProbe = async (command) => {
+  try {
+    const result = await runCommandWithTimeout([command, "--version"], {
+      timeoutMs: PROBE_TIMEOUT_MS,
+      maxOutputBytes: PROBE_MAX_OUTPUT_BYTES,
+      outputCapture: "head",
+    });
+    if (result.code !== 0) {
+      return null;
+    }
+    return result.stdout.trim().split(/\r?\n/u)[0] ?? null;
+  } catch {
+    // A missing or failing install rejects here; the probe is best effort and
+    // never fails startup.
+    return null;
+  }
+};
 
 /** The version string Claude Code prints: `2.1.273 (Claude Code)` → `2.1.273`. */
 export function parseClaudeCodeVersionOutput(output: string | null | undefined): string | null {

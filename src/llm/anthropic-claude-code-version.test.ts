@@ -5,7 +5,14 @@ import {
   resolveAnthropicClaudeCodeIdentity,
   setAnthropicClaudeCodeVersion,
 } from "@openclaw/ai/providers";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const runCommandWithTimeoutMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../process/exec.js", () => ({
+  runCommandWithTimeout: runCommandWithTimeoutMock,
+}));
+
 import {
   adoptInstalledClaudeCodeVersion,
   parseClaudeCodeVersionOutput,
@@ -15,6 +22,7 @@ import {
 afterEach(() => {
   resetAnthropicClaudeCodeVersionForTests();
   resetInstalledClaudeCodeVersionAdoptionForTests();
+  runCommandWithTimeoutMock.mockReset();
 });
 
 describe("setAnthropicClaudeCodeVersion", () => {
@@ -103,6 +111,43 @@ describe("adoptInstalledClaudeCodeVersion", () => {
       userAgent: "claude-cli/2.1.273",
       billingSystemBlock: "x-anthropic-billing-header: cc_version=2.1.273; cc_entrypoint=sdk-cli;",
     });
+  });
+
+  it("runs the default probe through the shared command runner, which launches Windows shims", async () => {
+    // A bare execFile cannot start npm's claude.cmd shim on Windows; the
+    // command runner owns that launcher handling for the whole repository.
+    runCommandWithTimeoutMock.mockResolvedValue({
+      stdout: "2.1.273 (Claude Code)\n",
+      stderr: "",
+      code: 0,
+      signal: null,
+      killed: false,
+      termination: "exit",
+    });
+
+    expect(await adoptInstalledClaudeCodeVersion()).toBe("2.1.273");
+    expect(runCommandWithTimeoutMock).toHaveBeenCalledWith(
+      ["claude", "--version"],
+      expect.objectContaining({ timeoutMs: 3_000, maxOutputBytes: 16 * 1024 }),
+    );
+  });
+
+  it("reports nothing when the installed CLI cannot be launched or fails", async () => {
+    runCommandWithTimeoutMock.mockRejectedValueOnce(
+      Object.assign(new Error("spawn claude ENOENT"), { code: "ENOENT" }),
+    );
+    runCommandWithTimeoutMock.mockResolvedValueOnce({
+      stdout: "",
+      stderr: "not found",
+      code: 127,
+      signal: null,
+      killed: false,
+      termination: "exit",
+    });
+
+    expect(await adoptInstalledClaudeCodeVersion()).toBeNull();
+    expect(getAnthropicClaudeCodeVersion()).toBe(ANTHROPIC_CLAUDE_CODE_VERSION);
+    expect(runCommandWithTimeoutMock).toHaveBeenCalledTimes(2);
   });
 
   it("probes once per process", async () => {

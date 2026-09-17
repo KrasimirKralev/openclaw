@@ -14,6 +14,11 @@ import {
   getAiTransportHost,
   type AiInlineContentBlock,
 } from "../host.js";
+import {
+  deferAnthropicClaudeCodeIdentityUntil,
+  resetAnthropicClaudeCodeVersionForTests,
+  setAnthropicClaudeCodeVersion,
+} from "../providers/anthropic-model-contract.js";
 import { createZeroUsage } from "../usage.test-support.js";
 import { onLlmRequestActivity } from "../utils/llm-request-activity.js";
 import { createCompactionCapture } from "./anthropic-compaction-replay.js";
@@ -2335,6 +2340,44 @@ describe("anthropic transport stream", () => {
     expect(result.content).toContainEqual(
       expect.objectContaining({ type: "toolCall", arguments: { path: "README.md" } }),
     );
+  });
+
+  it("waits for a pending Claude Code version probe and sends one version in both the user-agent and the billing block", async () => {
+    // A fresh process: the host has started probing the installed Claude Code
+    // but it has not answered yet. The first OAuth request must neither go out
+    // with the pinned fallback nor mix two versions in one request.
+    let finishProbe!: () => void;
+    const probe = new Promise<void>((resolve) => {
+      finishProbe = resolve;
+    });
+    deferAnthropicClaudeCodeIdentityUntil(probe);
+    try {
+      const streamFn = createAnthropicMessagesTransportStreamFn();
+      const pending = streamFn(
+        makeAnthropicTransportModel(),
+        {
+          systemPrompt: "Follow policy.",
+          messages: [{ role: "user", content: "hello" }],
+        } as unknown as Parameters<typeof streamFn>[1],
+        { apiKey: "sk-ant-oat-example" } as Parameters<typeof streamFn>[2],
+      );
+      await delay(20, undefined);
+      expect(guardedFetchMock).not.toHaveBeenCalled();
+
+      setAnthropicClaudeCodeVersion("2.1.273");
+      finishProbe();
+      const result = await (await Promise.resolve(pending)).result();
+      expect(result.stopReason).toBe("stop");
+
+      expect(guardedFetchMock).toHaveBeenCalledTimes(1);
+      expect(latestAnthropicRequestHeaders().get("user-agent")).toBe("claude-cli/2.1.273");
+      const system = requireArray(latestAnthropicRequest().payload.system, "system");
+      expect(requireRecord(system[0], "billing system item").text).toBe(
+        "x-anthropic-billing-header: cc_version=2.1.273; cc_entrypoint=sdk-cli;",
+      );
+    } finally {
+      resetAnthropicClaudeCodeVersionForTests();
+    }
   });
 
   it("preserves Anthropic OAuth identity and tool-name remapping with transport overrides", async () => {

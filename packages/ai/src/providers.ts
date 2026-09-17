@@ -9,8 +9,13 @@ export {
   OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH,
 } from "./providers/openai-prompt-cache.js";
 export {
+  ANTHROPIC_CLAUDE_CODE_IDENTITY_TIMEOUT_MS,
   ANTHROPIC_CLAUDE_CODE_VERSION,
+  type AnthropicClaudeCodeIdentity,
+  deferAnthropicClaudeCodeIdentityUntil,
   getAnthropicClaudeCodeVersion,
   resetAnthropicClaudeCodeVersionForTests,
+  resolveAnthropicClaudeCodeIdentity,
   setAnthropicClaudeCodeVersion,
+  snapshotAnthropicClaudeCodeIdentity,
 } from "./providers/anthropic-model-contract.js";

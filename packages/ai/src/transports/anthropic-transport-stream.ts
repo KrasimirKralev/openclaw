@@ -22,11 +22,12 @@ import {
   usesFoundryBearerAuth,
 } from "../providers/anthropic-auth-headers.js";
 import {
+  type AnthropicClaudeCodeIdentity,
   applyClaudeRequestContract,
-  getAnthropicClaudeCodeVersion,
   defaultsClaudeAdaptiveThinking,
   prepareClaudeNoPrefillRequestContext,
   requiresClaudeAdaptiveThinking,
+  resolveAnthropicClaudeCodeIdentity,
   resolveAnthropicThinkingEffort,
   resolveClaudeOpus5ModelIdentity,
   resolveClaudeSonnet5ModelIdentity,
@@ -441,8 +442,10 @@ function createAnthropicTransportClient(params: {
   context: Context;
   apiKey: string;
   options: AnthropicTransportOptions | undefined;
+  /** The settled identity this request presents as; the billing block must come from the same snapshot. */
+  claudeCodeIdentity: AnthropicClaudeCodeIdentity;
 }) {
-  const { model, context, apiKey, options } = params;
+  const { model, context, apiKey, options, claudeCodeIdentity } = params;
   const optionHeaders = resolveOpencodeSessionHeaders(model, options);
   const needsInterleavedBeta =
     (options?.interleavedThinking ?? true) && !supportsClaudeAdaptiveThinking(model);
@@ -511,7 +514,7 @@ function createAnthropicTransportClient(params: {
             accept: "application/json",
             "anthropic-dangerous-direct-browser-access": "true",
             ...(betaHeader ? { "anthropic-beta": betaHeader } : {}),
-            "user-agent": `claude-cli/${getAnthropicClaudeCodeVersion()}`,
+            "user-agent": claudeCodeIdentity.userAgent,
             "x-app": "cli",
           },
           model.headers,
@@ -555,6 +558,7 @@ async function buildAnthropicParams(
   context: Context,
   isOAuthToken: boolean,
   options: AnthropicTransportOptions | undefined,
+  claudeCodeIdentity: AnthropicClaudeCodeIdentity,
 ): Promise<{
   params: Record<string, unknown>;
   toolProjection?: AnthropicToolProjection;
@@ -607,7 +611,12 @@ async function buildAnthropicParams(
   if (!isOAuthToken && useAnthropicServerSideFallback(model)) {
     params.fallbacks = ANTHROPIC_SERVER_SIDE_FALLBACKS;
   }
-  const system = buildAnthropicSystemBlocks(context.systemPrompt, isOAuthToken, cacheControl);
+  const system = buildAnthropicSystemBlocks(
+    context.systemPrompt,
+    isOAuthToken,
+    cacheControl,
+    claudeCodeIdentity.billingSystemBlock,
+  );
   if (system) {
     params.system = system;
   }
@@ -733,17 +742,24 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
         }
         const transportOptions = resolveAnthropicTransportOptions(model, options, apiKey);
         const requestContext = prepareClaudeNoPrefillRequestContext(model, context);
+        // Settle the Claude Code identity before constructing anything that
+        // carries it: the user-agent (client) and the billing block (params)
+        // must come from the same snapshot, and a fresh process must not send
+        // the pinned fallback while a newer install is still being detected.
+        const claudeCodeIdentity = await resolveAnthropicClaudeCodeIdentity();
         const { client, isOAuthToken, directApiKeyBetaHeader } = createAnthropicTransportClient({
           model,
           context: requestContext,
           apiKey,
           options: transportOptions,
+          claudeCodeIdentity,
         });
         const builtParams = await buildAnthropicParams(
           model,
           requestContext,
           isOAuthToken,
           transportOptions,
+          claudeCodeIdentity,
         );
         usedCompactionReplay = builtParams.usedCompactionReplay;
         let params = builtParams.params;

@@ -54,9 +54,10 @@ import {
   usesFoundryBearerAuth,
 } from "./anthropic-auth-headers.js";
 import {
+  type AnthropicClaudeCodeIdentity,
   applyClaudeRequestContract,
-  getAnthropicClaudeCodeVersion,
   prepareClaudeNoPrefillRequestContext,
+  resolveAnthropicClaudeCodeIdentity,
   resolveAnthropicThinkingEffort,
   resolveClaudeOpus5ModelIdentity,
   resolveClaudeSonnet5ModelIdentity,
@@ -181,6 +182,11 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicComp
     let usedCompactionReplay = false;
 
     try {
+      // Settle the Claude Code identity before constructing anything that
+      // carries it: the user-agent (client) and the billing block (params)
+      // must come from the same snapshot, and a fresh process must not send
+      // the pinned fallback while a newer install is still being detected.
+      const claudeCodeIdentity = await resolveAnthropicClaudeCodeIdentity();
       let client: Anthropic;
       let isOAuth: boolean;
       // The beta-gated fallbacks param may only ship on clients we built,
@@ -210,6 +216,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicComp
         const created = createClient(
           model,
           apiKey,
+          claudeCodeIdentity,
           requestOptions?.thinkingEnabled === true,
           requestOptions?.interleavedThinking ?? true,
           shouldUseFineGrainedToolStreamingBeta(model, requestContext),
@@ -226,6 +233,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicComp
         model,
         requestContext,
         isOAuth,
+        claudeCodeIdentity,
         requestOptions,
         serverSideFallback,
       );
@@ -423,6 +431,7 @@ function supportsAnthropicServerSideFallback(model: Model<"anthropic-messages">)
 function createClient(
   model: Model<"anthropic-messages">,
   apiKey: string,
+  claudeCodeIdentity: AnthropicClaudeCodeIdentity,
   thinkingEnabled: boolean,
   interleavedThinking: boolean,
   useFineGrainedToolStreamingBeta: boolean,
@@ -539,7 +548,7 @@ function createClient(
           accept: "application/json",
           "anthropic-dangerous-direct-browser-access": "true",
           "anthropic-beta": ["claude-code-20250219", "oauth-2025-04-20", ...betaFeatures].join(","),
-          "user-agent": `claude-cli/${getAnthropicClaudeCodeVersion()}`,
+          "user-agent": claudeCodeIdentity.userAgent,
           "x-app": "cli",
         },
         model.headers,
@@ -598,6 +607,7 @@ async function buildParams(
   model: Model<"anthropic-messages">,
   context: Context,
   isOAuthTokenResult: boolean,
+  claudeCodeIdentity: AnthropicClaudeCodeIdentity,
   options?: AnthropicCompactionOptions,
   serverSideFallback = false,
 ): Promise<{
@@ -611,7 +621,12 @@ async function buildParams(
     model,
     options?.cacheRetention,
   );
-  const system = buildAnthropicSystemBlocks(context.systemPrompt, isOAuthTokenResult, cacheControl);
+  const system = buildAnthropicSystemBlocks(
+    context.systemPrompt,
+    isOAuthTokenResult,
+    cacheControl,
+    claudeCodeIdentity.billingSystemBlock,
+  );
   const compat = getAnthropicCompat(model);
   const convertedTools = context.tools
     ? convertAnthropicTools(

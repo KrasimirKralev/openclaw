@@ -24,6 +24,9 @@ const transportLogBySubsystem = new Map<string, ReturnType<typeof createSubsyste
 configureProviderErrorRedactor(redactSecrets);
 // Host-side, like the redactor above: the library cannot ask the machine what
 // Claude Code it has, and Anthropic gates its newest models on that number.
+// The probe registers itself as identity startup work in `@openclaw/ai`, so
+// OAuth requests built before it settles wait for it (bounded) rather than
+// going out with the pinned fallback.
 void adoptInstalledClaudeCodeVersion();
 
 function transportLog(subsystem: string): ReturnType<typeof createSubsystemLogger> {

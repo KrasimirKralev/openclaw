@@ -1,5 +1,8 @@
 import { execFile } from "node:child_process";
-import { setAnthropicClaudeCodeVersion } from "@openclaw/ai/providers";
+import {
+  deferAnthropicClaudeCodeIdentityUntil,
+  setAnthropicClaudeCodeVersion,
+} from "@openclaw/ai/providers";
 
 /**
  * Report the installed Claude Code's version on the Anthropic OAuth path.
@@ -42,6 +45,13 @@ let adoption: Promise<string | null> | null = null;
 /**
  * Resolves with the adopted version, or null when nothing newer was found.
  * Concurrent and repeat callers share one probe.
+ *
+ * The probe is registered as identity startup work in `@openclaw/ai`, so every
+ * OAuth request built while it is still running waits for it (bounded) before
+ * it reads the version — the user-agent header and the billing block of one
+ * request are always the same number, and the first request of a fresh
+ * process never reports the pinned fallback while a newer install is still
+ * being detected.
  */
 export function adoptInstalledClaudeCodeVersion(params?: {
   probe?: ClaudeCodeVersionProbe;
@@ -59,6 +69,7 @@ export function adoptInstalledClaudeCodeVersion(params?: {
       }
       return null;
     })();
+    deferAnthropicClaudeCodeIdentityUntil(adoption);
   }
   return adoption;
 }

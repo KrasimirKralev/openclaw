@@ -2,6 +2,7 @@ import {
   ANTHROPIC_CLAUDE_CODE_VERSION,
   getAnthropicClaudeCodeVersion,
   resetAnthropicClaudeCodeVersionForTests,
+  resolveAnthropicClaudeCodeIdentity,
   setAnthropicClaudeCodeVersion,
 } from "@openclaw/ai/providers";
 import { afterEach, describe, expect, it } from "vitest";
@@ -76,6 +77,32 @@ describe("adoptInstalledClaudeCodeVersion", () => {
       },
     });
     expect(adopted).toBe("2.1.260");
+  });
+
+  it("makes OAuth requests wait for the probe, so the first one reports the installed version", async () => {
+    let answer!: (output: string) => void;
+    const probe = () =>
+      new Promise<string | null>((resolve) => {
+        answer = resolve;
+      });
+    void adoptInstalledClaudeCodeVersion({ probe });
+
+    let identity: Awaited<ReturnType<typeof resolveAnthropicClaudeCodeIdentity>> | undefined;
+    const request = resolveAnthropicClaudeCodeIdentity().then((resolved) => {
+      identity = resolved;
+    });
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 20);
+    });
+    expect(identity).toBeUndefined();
+
+    answer("2.1.273 (Claude Code)");
+    await request;
+    expect(identity).toMatchObject({
+      version: "2.1.273",
+      userAgent: "claude-cli/2.1.273",
+      billingSystemBlock: "x-anthropic-billing-header: cc_version=2.1.273; cc_entrypoint=sdk-cli;",
+    });
   });
 
   it("probes once per process", async () => {

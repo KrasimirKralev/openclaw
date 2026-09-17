@@ -2380,6 +2380,39 @@ describe("anthropic transport stream", () => {
     }
   });
 
+  it("sends an API-key request without waiting for a pending Claude Code version probe", async () => {
+    // Only the OAuth route presents the Claude Code identity, so an API-key
+    // request must not sit behind the installed-CLI discovery gate.
+    let finishProbe!: () => void;
+    const probe = new Promise<void>((resolve) => {
+      finishProbe = resolve;
+    });
+    deferAnthropicClaudeCodeIdentityUntil(probe);
+    try {
+      const pending = runTransportStream(
+        makeAnthropicTransportModel(),
+        {
+          systemPrompt: "Follow policy.",
+          messages: [{ role: "user", content: "hello" }],
+        } as unknown as AnthropicStreamContext,
+        { apiKey: "sk-ant-api" } as AnthropicStreamOptions,
+      );
+      await vi.waitFor(() => {
+        expect(guardedFetchMock).toHaveBeenCalledTimes(1);
+      });
+      expect(latestAnthropicRequestHeaders().get("user-agent") ?? "").not.toContain("claude-cli");
+      expect(JSON.stringify(latestAnthropicRequest().payload.system ?? [])).not.toContain(
+        "cc_version",
+      );
+
+      finishProbe();
+      expect((await pending).stopReason).toBe("stop");
+    } finally {
+      finishProbe();
+      resetAnthropicClaudeCodeVersionForTests();
+    }
+  });
+
   it("preserves Anthropic OAuth identity and tool-name remapping with transport overrides", async () => {
     guardedFetchMock.mockResolvedValueOnce(
       createSseResponse([

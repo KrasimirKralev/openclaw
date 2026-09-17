@@ -182,13 +182,12 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicComp
     let usedCompactionReplay = false;
 
     try {
-      // Settle the Claude Code identity before constructing anything that
-      // carries it: the user-agent (client) and the billing block (params)
-      // must come from the same snapshot, and a fresh process must not send
-      // the pinned fallback while a newer install is still being detected.
-      const claudeCodeIdentity = await resolveAnthropicClaudeCodeIdentity();
       let client: Anthropic;
       let isOAuth: boolean;
+      // Set only on the OAuth route, which is the only one that presents the
+      // Claude Code identity; the user-agent (client) and the billing block
+      // (params) then come from that one snapshot.
+      let claudeCodeIdentity: AnthropicClaudeCodeIdentity | undefined;
       // The beta-gated fallbacks param may only ship on clients we built,
       // where the matching beta header is guaranteed; injected clients carry
       // caller-owned headers.
@@ -213,10 +212,9 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicComp
         const cacheRetention = requestOptions?.cacheRetention ?? resolveCacheRetention();
         const cacheSessionId = cacheRetention === "none" ? undefined : requestOptions?.sessionId;
 
-        const created = createClient(
+        const created = await createClient(
           model,
           apiKey,
-          claudeCodeIdentity,
           requestOptions?.thinkingEnabled === true,
           requestOptions?.interleavedThinking ?? true,
           shouldUseFineGrainedToolStreamingBeta(model, requestContext),
@@ -226,6 +224,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicComp
         );
         client = created.client;
         isOAuth = created.isOAuthToken;
+        claudeCodeIdentity = created.claudeCodeIdentity;
         serverSideFallback = created.serverSideFallback;
         directApiKeyBetaHeader = created.directApiKeyBetaHeader;
       }
@@ -428,22 +427,23 @@ function supportsAnthropicServerSideFallback(model: Model<"anthropic-messages">)
   return isDirectAnthropicModel(model);
 }
 
-function createClient(
+async function createClient(
   model: Model<"anthropic-messages">,
   apiKey: string,
-  claudeCodeIdentity: AnthropicClaudeCodeIdentity,
   thinkingEnabled: boolean,
   interleavedThinking: boolean,
   useFineGrainedToolStreamingBeta: boolean,
   optionsHeaders?: Record<string, string>,
   dynamicHeaders?: Record<string, string>,
   sessionId?: string,
-): {
+): Promise<{
   client: Anthropic;
   isOAuthToken: boolean;
   serverSideFallback: boolean;
   directApiKeyBetaHeader?: string;
-} {
+  /** Set on the OAuth route only; the billing block must come from this snapshot. */
+  claudeCodeIdentity?: AnthropicClaudeCodeIdentity;
+}> {
   // Adaptive thinking models (Opus 4.6, Sonnet 4.6) have interleaved thinking built-in.
   // The beta header is deprecated on Opus 4.6 and redundant on Sonnet 4.6, so skip it.
   const needsInterleavedBeta = interleavedThinking && !supportsClaudeAdaptiveThinking(model);
@@ -538,6 +538,11 @@ function createClient(
 
   // OAuth: Bearer auth, Claude Code identity headers
   if (isAnthropicOAuthApiKey(apiKey)) {
+    // Settle the identity here, after auth routing: only this request presents
+    // a Claude Code version, so only this one waits for the installed-CLI
+    // probe of a fresh process, and its user-agent and billing block are one
+    // snapshot. Every other route is built without touching the gate.
+    const claudeCodeIdentity = await resolveAnthropicClaudeCodeIdentity();
     const client = new Anthropic({
       apiKey: null,
       authToken: apiKey,
@@ -558,7 +563,7 @@ function createClient(
       maxRetries: 0,
     });
 
-    return { client, isOAuthToken: true, serverSideFallback: false };
+    return { client, isOAuthToken: true, serverSideFallback: false, claudeCodeIdentity };
   }
 
   // API key auth
@@ -607,7 +612,8 @@ async function buildParams(
   model: Model<"anthropic-messages">,
   context: Context,
   isOAuthTokenResult: boolean,
-  claudeCodeIdentity: AnthropicClaudeCodeIdentity,
+  /** Present exactly when the request carries the Claude Code identity. */
+  claudeCodeIdentity: AnthropicClaudeCodeIdentity | undefined,
   options?: AnthropicCompactionOptions,
   serverSideFallback = false,
 ): Promise<{
@@ -625,7 +631,7 @@ async function buildParams(
     context.systemPrompt,
     isOAuthTokenResult,
     cacheControl,
-    claudeCodeIdentity.billingSystemBlock,
+    claudeCodeIdentity?.billingSystemBlock,
   );
   const compat = getAnthropicCompat(model);
   const convertedTools = context.tools

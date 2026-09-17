@@ -437,15 +437,19 @@ async function readAnthropicMessagesErrorBody(response: Response): Promise<unkno
   }
 }
 
-function createAnthropicTransportClient(params: {
+async function createAnthropicTransportClient(params: {
   model: AnthropicTransportModel;
   context: Context;
   apiKey: string;
   options: AnthropicTransportOptions | undefined;
-  /** The settled identity this request presents as; the billing block must come from the same snapshot. */
-  claudeCodeIdentity: AnthropicClaudeCodeIdentity;
-}) {
-  const { model, context, apiKey, options, claudeCodeIdentity } = params;
+}): Promise<{
+  client: AnthropicMessagesClient;
+  isOAuthToken: boolean;
+  directApiKeyBetaHeader?: string;
+  /** Set on the OAuth route only; the billing block must come from this snapshot. */
+  claudeCodeIdentity?: AnthropicClaudeCodeIdentity;
+}> {
+  const { model, context, apiKey, options } = params;
   const optionHeaders = resolveOpencodeSessionHeaders(model, options);
   const needsInterleavedBeta =
     (options?.interleavedThinking ?? true) && !supportsClaudeAdaptiveThinking(model);
@@ -503,6 +507,11 @@ function createAnthropicTransportClient(params: {
     betaFeatures.push("interleaved-thinking-2025-05-14");
   }
   if (isAnthropicOAuthApiKey(apiKey)) {
+    // Settle the identity here, after auth routing: only this request presents
+    // a Claude Code version, so only this one waits for the installed-CLI
+    // probe of a fresh process, and its user-agent and billing block are one
+    // snapshot. Every other route is built without touching the gate.
+    const claudeCodeIdentity = await resolveAnthropicClaudeCodeIdentity();
     const betaHeader = buildAnthropicBetaHeader(model, betaFeatures, { oauth: true });
     return {
       client: createAnthropicMessagesClient({
@@ -523,6 +532,7 @@ function createAnthropicTransportClient(params: {
         fetch,
       }),
       isOAuthToken: true,
+      claudeCodeIdentity,
     };
   }
   if (useAnthropicServerSideFallback(model)) {
@@ -558,7 +568,8 @@ async function buildAnthropicParams(
   context: Context,
   isOAuthToken: boolean,
   options: AnthropicTransportOptions | undefined,
-  claudeCodeIdentity: AnthropicClaudeCodeIdentity,
+  /** Present exactly when the request carries the Claude Code identity. */
+  claudeCodeIdentity: AnthropicClaudeCodeIdentity | undefined,
 ): Promise<{
   params: Record<string, unknown>;
   toolProjection?: AnthropicToolProjection;
@@ -615,7 +626,7 @@ async function buildAnthropicParams(
     context.systemPrompt,
     isOAuthToken,
     cacheControl,
-    claudeCodeIdentity.billingSystemBlock,
+    claudeCodeIdentity?.billingSystemBlock,
   );
   if (system) {
     params.system = system;
@@ -742,18 +753,13 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
         }
         const transportOptions = resolveAnthropicTransportOptions(model, options, apiKey);
         const requestContext = prepareClaudeNoPrefillRequestContext(model, context);
-        // Settle the Claude Code identity before constructing anything that
-        // carries it: the user-agent (client) and the billing block (params)
-        // must come from the same snapshot, and a fresh process must not send
-        // the pinned fallback while a newer install is still being detected.
-        const claudeCodeIdentity = await resolveAnthropicClaudeCodeIdentity();
-        const { client, isOAuthToken, directApiKeyBetaHeader } = createAnthropicTransportClient({
-          model,
-          context: requestContext,
-          apiKey,
-          options: transportOptions,
-          claudeCodeIdentity,
-        });
+        const { client, isOAuthToken, directApiKeyBetaHeader, claudeCodeIdentity } =
+          await createAnthropicTransportClient({
+            model,
+            context: requestContext,
+            apiKey,
+            options: transportOptions,
+          });
         const builtParams = await buildAnthropicParams(
           model,
           requestContext,

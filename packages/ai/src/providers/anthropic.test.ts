@@ -348,6 +348,40 @@ describe("Anthropic provider", () => {
     }
   });
 
+  it("sends an API-key request without waiting for a pending Claude Code version probe", async () => {
+    // Only the OAuth route presents the Claude Code identity, so an API-key
+    // request must not sit behind the installed-CLI discovery gate.
+    let finishProbe!: () => void;
+    const probe = new Promise<void>((resolve) => {
+      finishProbe = resolve;
+    });
+    deferAnthropicClaudeCodeIdentityUntil(probe);
+    try {
+      const pending = captureSimpleAnthropicPayload(
+        {},
+        { apiKey: "sk-ant-provider" },
+        {
+          systemPrompt: "Follow policy.",
+          messages: [{ role: "user", content: "hello", timestamp: 1 }],
+        },
+      );
+      await vi.waitFor(() => {
+        expect(anthropicMockState.configs).toHaveLength(1);
+      });
+      const config = anthropicMockState.configs[0] as { defaultHeaders?: Record<string, string> };
+      expect(config.defaultHeaders?.["user-agent"] ?? "").not.toContain("claude-cli");
+
+      finishProbe();
+      const { payload: capturedPayload } = await pending;
+      expect(JSON.stringify((capturedPayload as { system?: unknown }).system ?? [])).not.toContain(
+        "cc_version",
+      );
+    } finally {
+      finishProbe();
+      resetAnthropicClaudeCodeVersionForTests();
+    }
+  });
+
   it("puts Claude subscription billing identity first for OAuth requests", async () => {
     const { payload: capturedPayload, result } = await captureSimpleAnthropicPayload(
       {},

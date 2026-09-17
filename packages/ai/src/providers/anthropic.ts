@@ -427,6 +427,31 @@ function supportsAnthropicServerSideFallback(model: Model<"anthropic-messages">)
   return isDirectAnthropicModel(model);
 }
 
+/**
+ * Whether the request will present the Claude Code identity, decided from the
+ * credential alone so the identity can be settled before any other work. It
+ * mirrors the route chain in {@link createClient}: the gateway, Copilot and
+ * Foundry routes are taken before the OAuth branch even when the key looks
+ * like a subscription token, and they carry no identity.
+ */
+function usesAnthropicClaudeCodeIdentity(
+  model: Model<"anthropic-messages">,
+  apiKey: string,
+): boolean {
+  if (model.provider === "cloudflare-ai-gateway" || model.provider === "github-copilot") {
+    return false;
+  }
+  if (
+    usesFoundryBearerAuth({
+      ...model,
+      headers: resolveAiTransportHeaderSentinels(model.headers),
+    })
+  ) {
+    return false;
+  }
+  return isAnthropicOAuthApiKey(apiKey);
+}
+
 async function createClient(
   model: Model<"anthropic-messages">,
   apiKey: string,
@@ -444,6 +469,14 @@ async function createClient(
   /** Set on the OAuth route only; the billing block must come from this snapshot. */
   claudeCodeIdentity?: AnthropicClaudeCodeIdentity;
 }> {
+  // Settle the identity before any other request work. The gate is bounded
+  // from the probe's start, and the host work below can be slow on a cold
+  // process — building the model fetch loads plugin metadata — so anything
+  // done first spends that budget and leaves the request on the pinned
+  // fallback. Routes that never present the identity skip the gate entirely.
+  const claudeCodeIdentity = usesAnthropicClaudeCodeIdentity(model, apiKey)
+    ? await resolveAnthropicClaudeCodeIdentity()
+    : undefined;
   // Adaptive thinking models (Opus 4.6, Sonnet 4.6) have interleaved thinking built-in.
   // The beta header is deprecated on Opus 4.6 and redundant on Sonnet 4.6, so skip it.
   const needsInterleavedBeta = interleavedThinking && !supportsClaudeAdaptiveThinking(model);
@@ -536,13 +569,10 @@ async function createClient(
     return { client, isOAuthToken: false, serverSideFallback: false };
   }
 
-  // OAuth: Bearer auth, Claude Code identity headers
-  if (isAnthropicOAuthApiKey(apiKey)) {
-    // Settle the identity here, after auth routing: only this request presents
-    // a Claude Code version, so only this one waits for the installed-CLI
-    // probe of a fresh process, and its user-agent and billing block are one
-    // snapshot. Every other route is built without touching the gate.
-    const claudeCodeIdentity = await resolveAnthropicClaudeCodeIdentity();
+  // OAuth: Bearer auth, Claude Code identity headers. The identity is defined
+  // exactly on this route (see usesAnthropicClaudeCodeIdentity), and its
+  // user-agent and billing block come from that one snapshot.
+  if (claudeCodeIdentity) {
     const client = new Anthropic({
       apiKey: null,
       authToken: apiKey,

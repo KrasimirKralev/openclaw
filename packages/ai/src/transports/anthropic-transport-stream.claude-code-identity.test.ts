@@ -114,6 +114,10 @@ describe("anthropic transport stream Claude Code identity", () => {
     try {
       const pending = runTransportStream("sk-ant-oat-example", "Follow policy.");
       await delay(20);
+      // The identity is settled before any other request work: the gate is
+      // bounded from the probe's start, and building the guarded fetch can load
+      // plugin metadata on a cold host, which would otherwise spend that budget.
+      expect(buildModelFetchMock).not.toHaveBeenCalled();
       expect(fetchMock).not.toHaveBeenCalled();
 
       setAnthropicClaudeCodeVersion("2.1.273");
@@ -145,6 +149,7 @@ describe("anthropic transport stream Claude Code identity", () => {
       await vi.waitFor(() => {
         expect(fetchMock).toHaveBeenCalledTimes(1);
       });
+      expect(buildModelFetchMock).toHaveBeenCalled();
       const request = latestAnthropicRequest();
       expect(request.headers.get("user-agent") ?? "").not.toContain("claude-cli");
       expect(JSON.stringify(request.payload.system ?? [])).not.toContain("cc_version");

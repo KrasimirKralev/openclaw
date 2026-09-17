@@ -101,6 +101,10 @@ describe("Anthropic provider Claude Code identity", () => {
         messages: [{ role: "user", content: "hello", timestamp: 1 }],
       });
       await delay(20);
+      // The identity is settled before any other request work: the gate is
+      // bounded from the probe's start, so host work such as building the
+      // model fetch must not run first and spend that budget.
+      expect(buildModelFetchMock).not.toHaveBeenCalled();
       expect(anthropicMockState.configs).toHaveLength(0);
 
       setAnthropicClaudeCodeVersion("2.1.273");
@@ -141,6 +145,7 @@ describe("Anthropic provider Claude Code identity", () => {
       await vi.waitFor(() => {
         expect(anthropicMockState.configs).toHaveLength(1);
       });
+      expect(buildModelFetchMock).toHaveBeenCalled();
       expect(latestClientHeaders()?.["user-agent"] ?? "").not.toContain("claude-cli");
 
       finishProbe();

@@ -68,6 +68,23 @@ export function useAnthropicServerSideFallback(model: AnthropicTransportModel): 
   );
 }
 
+/**
+ * Whether the request will present the Claude Code identity, decided from the
+ * credential alone so the identity can be settled before any other work. It
+ * mirrors the route chain in {@link createAnthropicTransportClient}: the
+ * Copilot and Foundry routes are taken before the OAuth branch even when the
+ * key looks like a subscription token, and they carry no identity.
+ */
+function usesAnthropicClaudeCodeIdentity(model: AnthropicTransportModel, apiKey: string): boolean {
+  if (
+    model.provider === "github-copilot" ||
+    usesFoundryBearerAuth(resolveModelHeaderSentinels(model))
+  ) {
+    return false;
+  }
+  return isAnthropicOAuthApiKey(apiKey);
+}
+
 function isKimiAnthropicProvider(provider: string | undefined): boolean {
   return /^kimi(?:-|$)/.test(normalizeLowercaseStringOrEmpty(provider ?? ""));
 }
@@ -304,6 +321,14 @@ export async function createAnthropicTransportClient(params: {
   claudeCodeIdentity?: AnthropicClaudeCodeIdentity;
 }> {
   const { model, context, apiKey, options } = params;
+  // Settle the identity before any other request work. The gate is bounded
+  // from the probe's start, and the host work below can be slow on a cold
+  // process — building the guarded fetch loads plugin metadata — so anything
+  // done first spends that budget and leaves the request on the pinned
+  // fallback. Routes that never present the identity skip the gate entirely.
+  const claudeCodeIdentity = usesAnthropicClaudeCodeIdentity(model, apiKey)
+    ? await resolveAnthropicClaudeCodeIdentity()
+    : undefined;
   const optionHeaders = resolveOpencodeSessionHeaders(model, options);
   const needsInterleavedBeta =
     (options?.interleavedThinking ?? true) && !supportsClaudeAdaptiveThinking(model);
@@ -360,12 +385,9 @@ export async function createAnthropicTransportClient(params: {
   if (needsInterleavedBeta) {
     betaFeatures.push("interleaved-thinking-2025-05-14");
   }
-  if (isAnthropicOAuthApiKey(apiKey)) {
-    // Settle the identity here, after auth routing: only this request presents
-    // a Claude Code version, so only this one waits for the installed-CLI
-    // probe of a fresh process, and its user-agent and billing block are one
-    // snapshot. Every other route is built without touching the gate.
-    const claudeCodeIdentity = await resolveAnthropicClaudeCodeIdentity();
+  // Defined exactly on this route (see usesAnthropicClaudeCodeIdentity), whose
+  // user-agent and billing block must come from that one snapshot.
+  if (claudeCodeIdentity) {
     const betaHeader = buildAnthropicBetaHeader(model, betaFeatures, { oauth: true });
     return {
       client: createAnthropicMessagesClient({

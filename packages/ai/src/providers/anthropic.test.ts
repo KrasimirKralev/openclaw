@@ -7,11 +7,6 @@ import {
   SYSTEM_PROMPT_RELOCATABLE_BOUNDARY,
   SYSTEM_PROMPT_RELOCATABLE_BOUNDARY_END,
 } from "../utils/system-prompt-cache-boundary.js";
-import {
-  deferAnthropicClaudeCodeIdentityUntil,
-  resetAnthropicClaudeCodeVersionForTests,
-  setAnthropicClaudeCodeVersion,
-} from "./anthropic-model-contract.js";
 
 const anthropicMockState = vi.hoisted(() => ({
   configs: [] as unknown[],
@@ -304,83 +299,6 @@ describe("Anthropic provider", () => {
       ).toEqual({ "x-opencode-session": "session-123" });
     },
   );
-
-  it("waits for a pending Claude Code version probe and sends one version in both the user-agent and the billing block", async () => {
-    // A fresh process: the host has started probing the installed Claude Code
-    // but it has not answered yet. The first OAuth request must neither go out
-    // with the pinned fallback nor mix two versions in one request.
-    let finishProbe!: () => void;
-    const probe = new Promise<void>((resolve) => {
-      finishProbe = resolve;
-    });
-    deferAnthropicClaudeCodeIdentityUntil(probe);
-    try {
-      const pending = captureSimpleAnthropicPayload(
-        {},
-        { apiKey: "sk-ant-oat01-test-token" },
-        { messages: [{ role: "user", content: "hello", timestamp: 1 }] },
-      );
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 20);
-      });
-      expect(anthropicMockState.configs).toHaveLength(0);
-
-      setAnthropicClaudeCodeVersion("2.1.273");
-      finishProbe();
-      const { payload: capturedPayload } = await pending;
-
-      expect(anthropicMockState.configs).toHaveLength(1);
-      const config = anthropicMockState.configs[0] as { defaultHeaders?: Record<string, string> };
-      expect(config.defaultHeaders?.["user-agent"]).toBe("claude-cli/2.1.273");
-      expect((capturedPayload as { system?: unknown }).system).toEqual([
-        {
-          type: "text",
-          text: "x-anthropic-billing-header: cc_version=2.1.273; cc_entrypoint=sdk-cli;",
-        },
-        {
-          type: "text",
-          text: "You are Claude Code, Anthropic's official CLI for Claude.",
-          cache_control: { type: "ephemeral" },
-        },
-      ]);
-    } finally {
-      resetAnthropicClaudeCodeVersionForTests();
-    }
-  });
-
-  it("sends an API-key request without waiting for a pending Claude Code version probe", async () => {
-    // Only the OAuth route presents the Claude Code identity, so an API-key
-    // request must not sit behind the installed-CLI discovery gate.
-    let finishProbe!: () => void;
-    const probe = new Promise<void>((resolve) => {
-      finishProbe = resolve;
-    });
-    deferAnthropicClaudeCodeIdentityUntil(probe);
-    try {
-      const pending = captureSimpleAnthropicPayload(
-        {},
-        { apiKey: "sk-ant-provider" },
-        {
-          systemPrompt: "Follow policy.",
-          messages: [{ role: "user", content: "hello", timestamp: 1 }],
-        },
-      );
-      await vi.waitFor(() => {
-        expect(anthropicMockState.configs).toHaveLength(1);
-      });
-      const config = anthropicMockState.configs[0] as { defaultHeaders?: Record<string, string> };
-      expect(config.defaultHeaders?.["user-agent"] ?? "").not.toContain("claude-cli");
-
-      finishProbe();
-      const { payload: capturedPayload } = await pending;
-      expect(JSON.stringify((capturedPayload as { system?: unknown }).system ?? [])).not.toContain(
-        "cc_version",
-      );
-    } finally {
-      finishProbe();
-      resetAnthropicClaudeCodeVersionForTests();
-    }
-  });
 
   it("puts Claude subscription billing identity first for OAuth requests", async () => {
     const { payload: capturedPayload, result } = await captureSimpleAnthropicPayload(

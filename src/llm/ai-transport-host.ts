@@ -17,10 +17,14 @@ import { createSubsystemLogger } from "../logging/subsystem.js";
 import { normalizeAnthropicInlineContentBlocks } from "../media/anthropic-inline-images.js";
 import { swapSecretSentinelsInText } from "../secrets/sentinel.js";
 import { trackAsyncWork } from "../shared/async-work-scope.js";
+import { adoptInstalledClaudeCodeVersion } from "./anthropic-claude-code-version.js";
 
 const transportLogBySubsystem = new Map<string, ReturnType<typeof createSubsystemLogger>>();
 
 configureProviderErrorRedactor(redactSecrets);
+// Host-side, like the redactor above: the library cannot ask the machine what
+// Claude Code it has, and Anthropic gates its newest models on that number.
+void adoptInstalledClaudeCodeVersion();
 
 function transportLog(subsystem: string): ReturnType<typeof createSubsystemLogger> {
   let log = transportLogBySubsystem.get(subsystem);

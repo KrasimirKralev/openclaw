@@ -8,3 +8,9 @@ export {
   clampOpenAIPromptCacheKey,
   OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH,
 } from "./providers/openai-prompt-cache.js";
+export {
+  ANTHROPIC_CLAUDE_CODE_VERSION,
+  getAnthropicClaudeCodeVersion,
+  resetAnthropicClaudeCodeVersionForTests,
+  setAnthropicClaudeCodeVersion,
+} from "./providers/anthropic-model-contract.js";

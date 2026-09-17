@@ -36,8 +36,72 @@ export {
   supportsClaudeNativeXhighEffort,
 } from "@openclaw/llm-core";
 
+/**
+ * The Claude Code version the Anthropic OAuth (subscription) path presents
+ * itself as, in `user-agent: claude-cli/<version>` and the billing header.
+ *
+ * Anthropic gates its newest models on this number: with the pinned value a
+ * Fable 5.1 request on a subscription login is refused with HTTP 400
+ * "Claude Code 2.1.75 does not support this model; version 2.1.251 or newer
+ * is required", while the same login works through an installed Claude Code
+ * that is newer. This constant is the FALLBACK; a host that finds a newer
+ * Claude Code installed reports that one through
+ * {@link setAnthropicClaudeCodeVersion} (the gateway does, at startup), so the
+ * version sent is one that is actually on the machine. Only a newer version
+ * is ever adopted — a downgrade would claim a client older than the pinned one.
+ */
 export const ANTHROPIC_CLAUDE_CODE_VERSION = "2.1.75";
-export const ANTHROPIC_CLAUDE_CODE_BILLING_SYSTEM_BLOCK = `x-anthropic-billing-header: cc_version=${ANTHROPIC_CLAUDE_CODE_VERSION}; cc_entrypoint=sdk-cli;`;
+
+let anthropicClaudeCodeVersion = ANTHROPIC_CLAUDE_CODE_VERSION;
+
+const SEMVER_PREFIX_RE = /^(\d+)\.(\d+)\.(\d+)/u;
+
+function parseSemverPrefix(version: string): [number, number, number] | null {
+  const match = SEMVER_PREFIX_RE.exec(version.trim());
+  if (!match) {
+    return null;
+  }
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function compareSemver(a: [number, number, number], b: [number, number, number]): number {
+  for (let i = 0; i < 3; i += 1) {
+    if (a[i] !== b[i]) {
+      return a[i] - b[i];
+    }
+  }
+  return 0;
+}
+
+/** The Claude Code version currently reported on the OAuth path. */
+export function getAnthropicClaudeCodeVersion(): string {
+  return anthropicClaudeCodeVersion;
+}
+
+/**
+ * Report an installed Claude Code's version on the OAuth path. Adopted only
+ * when it parses as `major.minor.patch` and is newer than the version in
+ * use; returns whether it was adopted.
+ */
+export function setAnthropicClaudeCodeVersion(version: string): boolean {
+  const next = parseSemverPrefix(version);
+  const current = parseSemverPrefix(anthropicClaudeCodeVersion);
+  if (!next || !current || compareSemver(next, current) <= 0) {
+    return false;
+  }
+  anthropicClaudeCodeVersion = `${next[0]}.${next[1]}.${next[2]}`;
+  return true;
+}
+
+/** Test seam: back to the pinned fallback. */
+export function resetAnthropicClaudeCodeVersionForTests(): void {
+  anthropicClaudeCodeVersion = ANTHROPIC_CLAUDE_CODE_VERSION;
+}
+
+/** The billing system block, carrying the version currently reported. */
+export function anthropicClaudeCodeBillingSystemBlock(): string {
+  return `x-anthropic-billing-header: cc_version=${anthropicClaudeCodeVersion}; cc_entrypoint=sdk-cli;`;
+}
 
 type ReplayModelRef = {
   provider?: string;

@@ -23,7 +23,7 @@ import {
 } from "../providers/anthropic-auth-headers.js";
 import {
   applyClaudeRequestContract,
-  ANTHROPIC_CLAUDE_CODE_VERSION,
+  getAnthropicClaudeCodeVersion,
   defaultsClaudeAdaptiveThinking,
   prepareClaudeNoPrefillRequestContext,
   requiresClaudeAdaptiveThinking,
@@ -511,7 +511,7 @@ function createAnthropicTransportClient(params: {
             accept: "application/json",
             "anthropic-dangerous-direct-browser-access": "true",
             ...(betaHeader ? { "anthropic-beta": betaHeader } : {}),
-            "user-agent": `claude-cli/${ANTHROPIC_CLAUDE_CODE_VERSION}`,
+            "user-agent": `claude-cli/${getAnthropicClaudeCodeVersion()}`,
             "x-app": "cli",
           },
           model.headers,

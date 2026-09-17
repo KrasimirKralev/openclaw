@@ -6,7 +6,7 @@ import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/s
 import { getAiTransportHost } from "../host.js";
 import type { AnthropicContextManagementOptions } from "../provider-options.js";
 import { isAnthropicOAuthApiKey } from "../providers/anthropic-auth-headers.js";
-import { ANTHROPIC_CLAUDE_CODE_BILLING_SYSTEM_BLOCK } from "../providers/anthropic-model-contract.js";
+import { anthropicClaudeCodeBillingSystemBlock } from "../providers/anthropic-model-contract.js";
 import { resolveCacheRetention } from "../providers/cache-retention.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import {
@@ -213,7 +213,7 @@ export function buildAnthropicSystemBlocks(
       ? undefined
       : cacheControl;
     blocks.unshift(
-      { type: "text", text: ANTHROPIC_CLAUDE_CODE_BILLING_SYSTEM_BLOCK },
+      { type: "text", text: anthropicClaudeCodeBillingSystemBlock() },
       {
         type: "text",
         text: "You are Claude Code, Anthropic's official CLI for Claude.",

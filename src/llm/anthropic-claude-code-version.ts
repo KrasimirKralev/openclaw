@@ -28,14 +28,25 @@ export type ClaudeCodeVersionProbe = (command: string) => Promise<string | null>
 // cmd.exe wrapping can start, and it also hides the console window.
 //
 // The version is the first line the CLI prints. Some installs keep running
-// after printing it (background work on the way out), so the probe must not
-// wait for the process to exit: it stops the command as soon as that line is
-// complete and reports what was printed. The exit code says nothing about a
-// line that already arrived, and a launch failure rejects into the fallback.
-const defaultProbe: ClaudeCodeVersionProbe = async (command) => {
-  let printed = "";
-  try {
-    const result = await runCommandWithTimeout([command, "--version"], {
+// after printing it (background work on the way out) and take their time to
+// stop, so the probe settles the moment that line is complete and lets the
+// runner stop the command in the background, bounded by its timeout. Waiting
+// for the exit here once held the identity gate open past its bound, and the
+// first request went out with the pinned fallback although the version had
+// already arrived. The exit code says nothing about a line that already
+// arrived; a launch failure settles into the fallback.
+const defaultProbe: ClaudeCodeVersionProbe = (command) =>
+  new Promise((resolve) => {
+    let printed = "";
+    let settled = false;
+    const settle = (output: string) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(output.trim().split(/\r?\n/u)[0] || null);
+    };
+    runCommandWithTimeout([command, "--version"], {
       timeoutMs: PROBE_TIMEOUT_MS,
       maxOutputBytes: PROBE_MAX_OUTPUT_BYTES,
       outputCapture: "head",
@@ -45,17 +56,15 @@ const defaultProbe: ClaudeCodeVersionProbe = async (command) => {
         }
         printed += chunk.toString("utf8");
         if (printed.includes("\n")) {
+          settle(printed);
           return false;
         }
       },
-    });
-    printed = printed || result.stdout;
-  } catch {
-    // A missing or failing install rejects here; the probe is best effort and
-    // never fails startup.
-  }
-  return printed.trim().split(/\r?\n/u)[0] || null;
-};
+    }).then(
+      (result) => settle(printed || result.stdout),
+      () => settle(printed),
+    );
+  });
 
 /** The version string Claude Code prints: `2.1.273 (Claude Code)` → `2.1.273`. */
 export function parseClaudeCodeVersionOutput(output: string | null | undefined): string | null {

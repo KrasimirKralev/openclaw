@@ -132,6 +132,27 @@ describe("adoptInstalledClaudeCodeVersion", () => {
     );
   });
 
+  it("takes the version from the first printed line and stops the CLI instead of waiting for it to exit", async () => {
+    // Some installs keep running after printing their version; the probe must
+    // not sit through the timeout (and lose the version) for that.
+    let stopped: boolean | void;
+    runCommandWithTimeoutMock.mockImplementation(async (_argv, options) => {
+      stopped = options.onOutputChunk?.(Buffer.from("2.1.274 (Claude Code)\n"), "stdout");
+      return {
+        stdout: "",
+        stderr: "",
+        code: null,
+        signal: "SIGTERM",
+        killed: true,
+        termination: "signal",
+      };
+    });
+
+    expect(await adoptInstalledClaudeCodeVersion()).toBe("2.1.274");
+    expect(stopped).toBe(false);
+    expect(getAnthropicClaudeCodeVersion()).toBe("2.1.274");
+  });
+
   it("reports nothing when the installed CLI cannot be launched or fails", async () => {
     runCommandWithTimeoutMock.mockRejectedValueOnce(
       Object.assign(new Error("spawn claude ENOENT"), { code: "ENOENT" }),

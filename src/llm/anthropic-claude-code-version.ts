@@ -26,22 +26,35 @@ export type ClaudeCodeVersionProbe = (command: string) => Promise<string | null>
 // The shared command runner owns the launcher rules a bare spawn does not have:
 // npm installs Claude Code as a `claude.cmd` shim, which only its trusted
 // cmd.exe wrapping can start, and it also hides the console window.
+//
+// The version is the first line the CLI prints. Some installs keep running
+// after printing it (background work on the way out), so the probe must not
+// wait for the process to exit: it stops the command as soon as that line is
+// complete and reports what was printed. The exit code says nothing about a
+// line that already arrived, and a launch failure rejects into the fallback.
 const defaultProbe: ClaudeCodeVersionProbe = async (command) => {
+  let printed = "";
   try {
     const result = await runCommandWithTimeout([command, "--version"], {
       timeoutMs: PROBE_TIMEOUT_MS,
       maxOutputBytes: PROBE_MAX_OUTPUT_BYTES,
       outputCapture: "head",
+      onOutputChunk: (chunk, stream) => {
+        if (stream !== "stdout") {
+          return;
+        }
+        printed += chunk.toString("utf8");
+        if (printed.includes("\n")) {
+          return false;
+        }
+      },
     });
-    if (result.code !== 0) {
-      return null;
-    }
-    return result.stdout.trim().split(/\r?\n/u)[0] ?? null;
+    printed = printed || result.stdout;
   } catch {
     // A missing or failing install rejects here; the probe is best effort and
     // never fails startup.
-    return null;
   }
+  return printed.trim().split(/\r?\n/u)[0] || null;
 };
 
 /** The version string Claude Code prints: `2.1.273 (Claude Code)` → `2.1.273`. */

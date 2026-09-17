@@ -52,13 +52,14 @@ const defaultProbe: ClaudeCodeVersionProbe = (command) =>
       outputCapture: "head",
       onOutputChunk: (chunk, stream) => {
         if (stream !== "stdout") {
-          return;
+          return undefined;
         }
         printed += chunk.toString("utf8");
-        if (printed.includes("\n")) {
-          settle(printed);
-          return false;
+        if (!printed.includes("\n")) {
+          return undefined;
         }
+        settle(printed);
+        return false;
       },
     }).then(
       (result) => settle(printed || result.stdout),

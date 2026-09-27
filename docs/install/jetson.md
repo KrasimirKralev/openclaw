@@ -60,8 +60,11 @@ Run a persistent, always-on OpenClaw Gateway on an NVIDIA Jetson. Like any other
     sudo apt update && sudo apt upgrade -y
     sudo apt install -y git curl build-essential
 
-    # Set timezone (important for cron and reminders)
-    sudo timedatectl set-timezone America/Chicago
+    # Check the timezone (it drives cron jobs and reminders).
+    timedatectl
+    # Only if it is wrong: pick your IANA zone from `timedatectl list-timezones`
+    # and uncomment the line below with that zone.
+    # sudo timedatectl set-timezone Europe/Berlin
     ```
 
   </Step>
@@ -94,8 +97,11 @@ Run a persistent, always-on OpenClaw Gateway on an NVIDIA Jetson. Like any other
 
   <Step title="Install OpenClaw">
     ```bash
-    curl -fsSL https://openclaw.ai/install.sh | bash
+    curl -fsSL https://openclaw.ai/install.sh | bash -s -- --no-onboard
     ```
+
+    `--no-onboard` skips the installer's own setup wizard, because the next step runs onboarding together with the service install.
+
   </Step>
 
   <Step title="Run onboarding">
@@ -197,7 +203,7 @@ Note that CUDA, cuDNN, and TensorRT come from JetPack and are Jetson-specific bu
 
 OpenClaw state lives under:
 
-- `~/.openclaw/` -- `openclaw.json`, per-agent `auth-profiles.json`, channel/provider state, sessions.
+- `~/.openclaw/` -- `openclaw.json` (configuration), `state/openclaw.sqlite` (shared runtime state), and per agent `agents/<agentId>/agent/openclaw-agent.sqlite` (model auth profiles, sessions, and transcripts). See [Secrets and storage](/gateway/security/secrets-and-storage) for what each store holds.
 - `~/.openclaw/workspace/` -- agent workspace (SOUL.md, memory, artifacts).
 
 These survive reboots and benefit from NVMe over microSD for both performance and longevity. Take a portable snapshot with:

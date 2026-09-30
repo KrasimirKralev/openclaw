@@ -1210,6 +1210,9 @@ describe("gatherDaemonStatus", () => {
     setCliConfigIssues: (issues) => {
       cliConfigIssues = issues;
     },
+    setCliConfig: (config) => {
+      cliLoadedConfig = config;
+    },
   });
 
   registerStatusTimeoutTests({

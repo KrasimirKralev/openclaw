@@ -16,6 +16,7 @@ export function registerStatusConfigReadTests(params: {
   createConfigIOCalls: Mock;
   loadConfigCalls: Mock;
   setCliConfigIssues: (issues: ConfigIssue[]) => void;
+  setCliConfig: (config: Record<string, unknown>) => void;
 }): void {
   const { gatherStatus, withStatusConfig, createConfigIOCalls, loadConfigCalls } = params;
 
@@ -73,6 +74,35 @@ export function registerStatusConfigReadTests(params: {
       expect(status.gateway?.bindMode).toBe("loopback");
       const output = capturePrintedDaemonStatus(status, { json: false }).errors;
       expect(output).toContain("Expected number, received string");
+    });
+  });
+
+  it("drops rejected values from an invalid deep config instead of rendering them", async () => {
+    await withStatusConfig("{}", async () => {
+      params.setCliConfig({ logging: { file: 42 }, gateway: { controlUi: { basePath: 42 } } });
+      params.setCliConfigIssues([
+        { path: "logging.file", message: "Invalid input: expected string, received number" },
+        {
+          path: "gateway.controlUi.basePath",
+          message: "Invalid input: expected string, received number",
+        },
+      ]);
+
+      const status = await gatherStatus({ probe: false, deep: true });
+
+      expect(status.logFile).toEqual(expect.any(String));
+      expect(status.config?.cli.controlUi).toEqual({});
+      const output = capturePrintedDaemonStatus(status, { json: false }).errors;
+      expect(output).toContain("gateway.controlUi.basePath");
+    });
+  });
+
+  it("falls back to the default log file for a non-string fast-path logging.file", async () => {
+    await withStatusConfig(JSON.stringify({ logging: { file: 42 } }), async () => {
+      const status = await gatherStatus({ probe: false });
+
+      expect(createConfigIOCalls).not.toHaveBeenCalled();
+      expect(status.logFile).toEqual(expect.any(String));
     });
   });
 }

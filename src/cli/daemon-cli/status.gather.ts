@@ -159,7 +159,8 @@ async function readFullStatusConfig(params: {
     },
   });
   const snapshot = await io.readConfigFileSnapshot().catch(() => null);
-  const cfg = (snapshot?.valid && snapshot.runtimeConfig) || io.loadConfig();
+  // Invalid snapshots stay inspectable; status reports their issues instead of failing.
+  const cfg = snapshot?.runtimeConfig ?? io.loadConfig();
   return {
     summary: {
       path: snapshot?.path ?? params.configPath,

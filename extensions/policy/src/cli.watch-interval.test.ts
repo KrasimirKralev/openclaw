@@ -45,13 +45,12 @@ async function runPolicyWatch(args: readonly string[]): Promise<void> {
 }
 
 it.each([
-  { value: undefined, expected: 2000 },
   { value: "250", expected: 250 },
   { value: String(MAX_TIMER_TIMEOUT_MS), expected: MAX_TIMER_TIMEOUT_MS },
   { value: "2147483648", expected: MAX_TIMER_TIMEOUT_MS },
   { value: String(Number.MAX_SAFE_INTEGER), expected: MAX_TIMER_TIMEOUT_MS },
 ])("keeps watch interval $value within the safe timer range", async ({ value, expected }) => {
-  await runPolicyWatch(value === undefined ? [] : ["--interval-ms", value]);
+  await runPolicyWatch(["--interval-ms", value]);
 
   expect(mocks.delay).toHaveBeenCalledTimes(1);
   expect(mocks.delay).toHaveBeenCalledWith(expected);

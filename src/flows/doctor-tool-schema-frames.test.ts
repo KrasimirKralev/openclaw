@@ -204,6 +204,47 @@ it.each([
   },
 );
 
+it("resolves default and agent-scoped primary aliases before preparing standalone frames", async () => {
+  await withOpenClawTestState({}, async (state) => {
+    resolveModelAsync.mockImplementation(async (...args: Parameters<ResolveModel>) => {
+      const [provider, id] = args;
+      return {
+        model: {
+          id,
+          name: id,
+          provider,
+          api: "openai-completions",
+          baseUrl: "http://127.0.0.1:1/v1",
+          contextWindow: 32000,
+        },
+      };
+    });
+    const cfg: OpenClawConfig = {
+      agents: {
+        ownership: "explicit",
+        defaults: {
+          systemAgent: { agentId: "alpha" },
+          model: "fast",
+          models: { "fixture/default-model": { alias: "fast" } },
+        },
+        entries: {
+          alpha: { workspace: state.path("alpha") },
+          beta: {
+            workspace: state.path("beta"),
+            models: { "fixture/agent-model": { alias: "fast" } },
+          },
+        },
+      },
+    };
+    const result = await prepareDoctorToolSchemaFrames(cfg, { mode: "doctor", env: state.env });
+    expect(result.findings).toEqual([]);
+    expect(result.frames.map(({ agentId, modelRef }) => ({ agentId, modelRef }))).toEqual([
+      { agentId: "alpha", modelRef: { provider: "fixture", model: "default-model" } },
+      { agentId: "beta", modelRef: { provider: "fixture", model: "agent-model" } },
+    ]);
+  });
+});
+
 it("records deferred model preparation and continues with a healthy agent", async () => {
   await withOpenClawTestState({}, async (state) => {
     resolveModelAsync.mockImplementation(async (...args: Parameters<ResolveModel>) => {

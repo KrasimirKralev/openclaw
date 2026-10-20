@@ -1,5 +1,6 @@
 import { isRecord as hasRecord } from "@openclaw/normalization-core/record-coerce";
-import { listAgentEntries, resolveAgentConfig } from "../../../agents/agent-scope-config.js";
+import { listAgentEntries } from "../../../agents/agent-scope-config.js";
+import { resolveDefaultModelForAgent } from "../../../agents/model-selection-config.js";
 import { resolveProviderToolPolicy } from "../../../agents/provider-tool-policy.js";
 import { pickSandboxToolPolicy } from "../../../agents/sandbox-tool-policy.js";
 import { isToolAllowedByPolicies } from "../../../agents/tool-policy-match.js";
@@ -10,7 +11,6 @@ import type {
   ToolPolicyConfig,
   ToolsConfig,
 } from "../../../config/types.tools.js";
-import { resolveDoctorPrimaryModelRef } from "./primary-model-ref.js";
 
 export function resolveMessageToolAvailability(params: {
   cfg: OpenClawConfig;
@@ -19,8 +19,11 @@ export function resolveMessageToolAvailability(params: {
   agentTools?: AgentToolsConfig;
   runtimeAlsoAllow?: string[];
 }): boolean {
-  const agentConfig = params.agentId ? resolveAgentConfig(params.cfg, params.agentId) : undefined;
-  const modelRef = resolveDoctorPrimaryModelRef(params.cfg, agentConfig?.model);
+  const modelRef = resolveDefaultModelForAgent({
+    cfg: params.cfg,
+    agentId: params.agentId,
+    allowPluginNormalization: false,
+  });
   const [providerPolicy, agentProviderPolicy] = [
     params.globalTools?.byProvider,
     params.agentTools?.byProvider,

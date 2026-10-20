@@ -773,6 +773,33 @@ describe("doctor preview warnings", () => {
     expect(warnings).toStrictEqual([]);
   });
 
+  it.each([
+    { target: "google/gemini-2.5-pro", warns: true },
+    { target: "openai/gpt-5.5", warns: false },
+  ])(
+    "matches inherited provider profiles against the agent's aliased primary ($target)",
+    async ({ target, warns }) => {
+      const warnings = await collectProfileConfiguredToolSectionWarningsThroughDoctor({
+        tools: { byProvider: { google: { profile: "messaging" } } },
+        agents: {
+          entries: {
+            sage: {
+              model: { primary: "fast" },
+              models: { [target]: { alias: "fast" } },
+              tools: { exec: { mode: "allowlist" } },
+            },
+          },
+        },
+      });
+
+      expect(
+        warnings.filter((warning) =>
+          warning.includes('tools.byProvider.google.profile is "messaging"'),
+        ),
+      ).toHaveLength(warns ? 1 : 0);
+    },
+  );
+
   it("does not warn for configured tool sections when the profile id is unknown", async () => {
     const malformedConfig = {
       tools: {
@@ -878,6 +905,32 @@ describe("doctor preview warnings", () => {
     expect(await collectVisibleReplyToolPolicyWarningsThroughDoctor(cfg)).toStrictEqual([]);
     expect(await collectChannelBoundMessageToolPolicyWarningsThroughDoctor(cfg)).toStrictEqual([]);
   });
+
+  it.each([
+    { target: "google/gemini-2.5-pro", warns: true },
+    { target: "openai/gpt-5.5", warns: false },
+  ])(
+    "checks message provider policy for the agent's aliased primary ($target)",
+    async ({ target, warns }) => {
+      const cfg = {
+        agents: {
+          entries: {
+            main: { model: { primary: "fast" }, models: { [target]: { alias: "fast" } } },
+          },
+        },
+        channels: { discord: {} },
+        messages: { groupChat: { visibleReplies: "message_tool" } },
+        tools: { profile: "coding" as const, byProvider: { google: { allow: ["read"] } } },
+      } satisfies OpenClawConfig;
+
+      expect(await collectVisibleReplyToolPolicyWarningsThroughDoctor(cfg)).toHaveLength(
+        warns ? 1 : 0,
+      );
+      expect(await collectChannelBoundMessageToolPolicyWarningsThroughDoctor(cfg)).toHaveLength(
+        warns ? 1 : 0,
+      );
+    },
+  );
 
   it("warns separately for explicit global and group visible reply policy mismatches", async () => {
     const warnings = await collectVisibleReplyToolPolicyWarningsThroughDoctor({

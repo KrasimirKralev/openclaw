@@ -6,6 +6,7 @@ import {
   listAgentEntriesWithSource,
   resolveAgentConfig,
 } from "../../../agents/agent-scope-config.js";
+import { resolveDefaultModelForAgent } from "../../../agents/model-selection-config.js";
 import {
   normalizeToolProviderPolicyKey,
   resolveProviderToolPolicy,
@@ -24,7 +25,6 @@ import {
   resolveMessageToolAvailability,
   SOURCE_REPLY_RUNTIME_MESSAGE_ALLOW,
 } from "./preview-message-tool-policy.js";
-import { resolveDoctorPrimaryModelRef } from "./primary-model-ref.js";
 
 function listAgentRecords(cfg: OpenClawConfig) {
   return listAgentEntriesWithSource(cfg).map(({ entry }) => entry);
@@ -344,8 +344,7 @@ function collectProfileConfiguredToolSectionWarnings(cfg: OpenClawConfig): strin
   for (const { entry: agent, source } of listAgentEntriesWithSource(cfg)) {
     const agentTools = asOptionalRecord(agent.tools);
     const agentId = typeof agent.id === "string" ? agent.id : undefined;
-    const agentConfig = agentId ? resolveAgentConfig(cfg, agentId) : undefined;
-    const modelRef = resolveDoctorPrimaryModelRef(cfg, agentConfig?.model);
+    const modelRef = resolveDefaultModelForAgent({ cfg, agentId, allowPluginNormalization: false });
     const agentPath = `agents.${source.kind === "entries" ? `entries.${source.key}` : `list[${source.index}]`}.tools`;
     const ownAgentConfiguredEntries = collectConfiguredToolSectionGrantEntries({
       tools: agentTools,

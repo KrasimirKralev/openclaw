@@ -4,6 +4,12 @@ import {
   normalizeStringifiedOptionalString,
 } from "../../../../packages/normalization-core/src/string-coerce.js";
 import { note } from "../../../../packages/terminal-core/src/note.js";
+import { modelKey } from "../../../agents/model-ref-shared.js";
+import { resolveDefaultModelForAgent } from "../../../agents/model-selection-config.js";
+import {
+  buildModelAliasIndex,
+  resolveModelRefFromString,
+} from "../../../agents/model-selection-shared.js";
 import { normalizeChatChannelId } from "../../../channels/ids.js";
 import { listReadOnlyChannelPluginsForConfig } from "../../../channels/plugins/read-only.js";
 import { formatCliCommand } from "../../../cli/command-format.js";
@@ -50,13 +56,29 @@ function addJobExample(examples: string[], job: Record<string, unknown>, target:
   }
 }
 
+// Resolve aliases on both sides, as the cron runner does, so an alias matches its target.
+function createDefaultModelMatcher(cfg: OpenClawConfig): (model: string) => boolean {
+  const options = { cfg, allowManifestNormalization: false, allowPluginNormalization: false };
+  const defaultRef = resolveDefaultModelForAgent(options);
+  const defaultKey = modelKey(defaultRef.provider, defaultRef.model);
+  const aliasIndex = buildModelAliasIndex({ ...options, defaultProvider: defaultRef.provider });
+  return (model) => {
+    const ref = resolveModelRefFromString({
+      ...options,
+      raw: model,
+      defaultProvider: defaultRef.provider,
+      aliasIndex,
+    })?.ref;
+    return ref !== undefined && modelKey(ref.provider, ref.model) === defaultKey;
+  };
+}
+
 export function noteCronModelOverrides(params: {
   cfg: OpenClawConfig;
   jobs: Array<Record<string, unknown>>;
 }) {
   const defaultModel = resolveAgentModelPrimaryValue(params.cfg.agents?.defaults?.model);
-  const defaultKey =
-    normalizeModelRef(defaultModel) ?? normalizeOptionalString(defaultModel)?.toLowerCase();
+  let isDefaultModel: ((model: string) => boolean) | undefined;
   const providerCounts = new Map<string, number>();
   const mismatchExamples: string[] = [];
   let overrideCount = 0;
@@ -79,8 +101,11 @@ export function noteCronModelOverrides(params: {
     const modelRef = normalizeModelRef(model);
     const provider = modelRef?.split("/", 1)[0] ?? "bare/alias";
     providerCounts.set(provider, (providerCounts.get(provider) ?? 0) + 1);
-    const modelKey = modelRef ?? model.toLowerCase();
-    if (defaultKey && modelKey && modelKey !== defaultKey) {
+    if (!defaultModel) {
+      continue;
+    }
+    isDefaultModel ??= createDefaultModelMatcher(params.cfg);
+    if (!isDefaultModel(model)) {
       mismatchCount += 1;
       addJobExample(mismatchExamples, rawJob, model);
     }

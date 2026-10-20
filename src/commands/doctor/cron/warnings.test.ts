@@ -1,8 +1,10 @@
 // Doctor cron delivery-target advisory tests cover concrete-vs-pseudo channel detection.
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import {
   collectLegacyWhatsAppCrontabHealthWarning,
   noteCronDeliveryTargetAdvisory,
+  noteCronModelOverrides,
   noteLegacyWhatsAppCrontabHealthCheck,
 } from "./warnings.js";
 
@@ -86,6 +88,42 @@ describe("collectCronDeliveryTargetAdvisory", () => {
     });
     expect(advisory).toContain("Nightly digest -> ghost");
     expect(advisory).toContain("<unnamed> -> ghost");
+  });
+});
+
+describe("noteCronModelOverrides", () => {
+  function cronModelNote(primary: string, model: string): string {
+    const cfg: OpenClawConfig = {
+      agents: {
+        defaults: {
+          model: { primary },
+          models: { "google/gemini-2.5-pro": { alias: "gem" } },
+        },
+      },
+    };
+    noteCronModelOverrides({
+      cfg,
+      jobs: [job({ payload: { kind: "agentTurn", message: "Brief", model } })],
+    });
+    const body = mocks.note.mock.calls.at(-1)?.[0];
+    return typeof body === "string" ? body : "";
+  }
+
+  it.each([
+    { primary: "gem", model: "google/gemini-2.5-pro" },
+    { primary: "google/gemini-2.5-pro", model: "gem" },
+  ])("treats $model as the $primary default model", ({ primary, model }) => {
+    const body = cronModelNote(primary, model);
+
+    expect(body).toContain("1 job set `payload.model`");
+    expect(body).not.toContain("different model");
+  });
+
+  it("still reports a job pinned to another model when the default is an alias", () => {
+    const body = cronModelNote("gem", "openai/gpt-5.5");
+
+    expect(body).toContain("1 job uses a different model than `agents.defaults.model` (gem)");
+    expect(body).toContain("Examples: job -> openai/gpt-5.5");
   });
 });
 

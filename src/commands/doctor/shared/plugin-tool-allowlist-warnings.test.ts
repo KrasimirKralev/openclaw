@@ -164,6 +164,34 @@ describe("collectPluginToolAllowlistWarnings", () => {
     expect(warnings).toStrictEqual([]);
   });
 
+  it.each([
+    { target: "google/gemini-2.5-pro", warns: false },
+    { target: "openai/gpt-5.5", warns: true },
+  ])(
+    "evaluates provider MCP policy for the agent's aliased primary ($target)",
+    ({ target, warns }) => {
+      const warnings = mcpWarnings({
+        agents: {
+          entries: {
+            worker: {
+              model: { primary: "fast" },
+              models: { [target]: { alias: "fast" } },
+              sandbox: { mode: "all" },
+              tools: { sandbox: { tools: { alsoAllow: ["web_fetch"] } } },
+            },
+          },
+        },
+        tools: { byProvider: { google: { profile: "minimal" } } },
+      });
+
+      expect(warnings).toEqual(
+        warns
+          ? [expect.stringContaining("agents.entries.worker.tools.sandbox.tools.alsoAllow")]
+          : [],
+      );
+    },
+  );
+
   it("still warns when the active provider allowlist allows MCP tools but sandbox policy hides them", () => {
     const warnings = mcpWarnings({
       tools: {

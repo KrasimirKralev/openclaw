@@ -131,6 +131,22 @@ describe("legacy device-auth Doctor migration", () => {
     },
   );
 
+  it("refuses malformed UTF-8 and imports the repaired source later", async () => {
+    const malformed = Buffer.concat([
+      Buffer.from('{"version":1,"deviceId":"device-1","tokens":{"operator":{"token":"legacy-'),
+      Buffer.from([0xff]),
+      Buffer.from('token","scopes":[],"updatedAtMs":10}}}'),
+    ]);
+    fs.writeFileSync(sourcePath, malformed);
+    const refused = await migrate();
+    expect(refused.warnings).toEqual([expect.stringContaining("valid UTF-8")]);
+    expect(fs.readFileSync(sourcePath)).toEqual(malformed);
+
+    fs.writeFileSync(sourcePath, malformed.toString("latin1").replace("ÿ", ""));
+    expect((await migrate()).warnings).toEqual([]);
+    expect(readToken()?.token).toBe("legacy-token");
+  });
+
   it.each([".doctor-importing", ".native-importing"])(
     "imports matching retained %s claims once",
     async (suffix) => {

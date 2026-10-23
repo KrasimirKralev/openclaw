@@ -34,6 +34,8 @@ const runImage = (action: string, aspectRatio: string) =>
     action,
     "--prompt",
     "portrait",
+    "--model",
+    "openai/gpt-image-1.5",
     ...(action === "edit" ? ["--file", "unused.png"] : []),
     "--aspect-ratio",
     aspectRatio,
@@ -42,6 +44,18 @@ const runImage = (action: string, aspectRatio: string) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.resolveLocalCapabilityAgent.mockResolvedValue({
+    cfg: {},
+    agentId: "main",
+    agentDir: "/tmp/agent",
+  });
+  mocks.generateImage.mockResolvedValue({
+    provider: "openai",
+    model: "gpt-image-1.5",
+    attempts: [],
+    images: [],
+    ignoredOverrides: [],
+  });
 });
 
 it.each([
@@ -59,19 +73,6 @@ it.each([
 });
 
 it("passes a numeric aspect ratio outside the tool list to the image runtime", async () => {
-  mocks.resolveLocalCapabilityAgent.mockResolvedValue({
-    cfg: {},
-    agentId: "main",
-    agentDir: "/tmp/agent",
-  });
-  mocks.generateImage.mockResolvedValue({
-    provider: "openai",
-    model: "gpt-image-1.5",
-    attempts: [],
-    images: [],
-    ignoredOverrides: [],
-  });
-
   await runImage("generate", "7:5");
 
   expect(mocks.generateImage).toHaveBeenCalledWith(expect.objectContaining({ aspectRatio: "7:5" }));

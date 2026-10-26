@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
+import { sanitizeTerminalText } from "../../packages/terminal-core/src/safe-text.js";
 import { captureRuntimeConfigAsyncReader } from "../config/config.js";
 import type { BackupCreateOptions, BackupCreateResult } from "../infra/backup-create.js";
 import {
@@ -220,7 +221,7 @@ export async function backupListCommand(runtime: RuntimeEnv, opts: RemoteBackupO
       if (namespaces) {
         runtime.log(
           namespaces.length
-            ? `Available namespaces in ${opts.from}:\n${namespaces.map((entry) => `${entry.namespace}${entry.hostname ? ` (${entry.hostname})` : ""}`).join("\n")}`
+            ? `Available namespaces in ${opts.from}:\n${namespaces.map((entry) => `${entry.namespace}${entry.hostname ? ` (${sanitizeTerminalText(entry.hostname)})` : ""}`).join("\n")}`
             : `No backup namespaces in ${opts.from}.`,
         );
       }

@@ -100,12 +100,17 @@ export async function fetchMinimaxResponse(params: MinimaxFetchParams) {
 
 /** Downloads a provider-returned result URL (generated video or music). */
 export async function fetchMinimaxResultDownload(params: Omit<MinimaxFetchParams, "init">) {
-  // Result URLs never inherit task credentials or private-network trust.
+  const { allowPrivateNetwork, dispatcherPolicy } = params.policy;
+  // Result URLs never inherit task credentials or private-network trust; the
+  // opt-in still authorizes the operator's own private proxy host.
   return await fetchMinimaxGuarded(
     { ...params, init: { method: "GET" } },
     {
       mode: "strict",
-      dispatcherPolicy: params.policy.dispatcherPolicy ?? { mode: "env-proxy" },
+      dispatcherPolicy:
+        allowPrivateNetwork && dispatcherPolicy?.mode === "explicit-proxy"
+          ? { ...dispatcherPolicy, allowPrivateProxy: true }
+          : (dispatcherPolicy ?? { mode: "env-proxy" }),
     },
   );
 }

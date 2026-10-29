@@ -230,7 +230,10 @@ export default definePluginEntry({
             if (!runNonInteractive) {
               return null;
             }
-            if (validateProxyBaseUrl(normalizeOptionalSecretInput(ctx.opts.customBaseUrl) ?? "")) {
+            const urlError = validateProxyBaseUrl(
+              normalizeOptionalSecretInput(ctx.opts.customBaseUrl) ?? "",
+            );
+            if (urlError) {
               // Resolve the key as usual so setup parity holds, but never store it for a bad URL.
               await runNonInteractive({
                 ...ctx,
@@ -239,9 +242,7 @@ export default definePluginEntry({
                   return null;
                 },
               });
-              ctx.runtime.error(
-                `The LiteLLM proxy URL must be a full http:// or https:// URL, such as ${LITELLM_BASE_URL}.`,
-              );
+              ctx.runtime.error(urlError);
               ctx.runtime.exit(1);
               return null;
             }

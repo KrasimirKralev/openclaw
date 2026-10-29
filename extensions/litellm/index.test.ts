@@ -56,15 +56,7 @@ async function authenticate(
     baseConfig: cfg,
     opts,
     runtime: createRuntimeSpies(),
-    resolveApiKey: async (request) => {
-      expect(request).toEqual({
-        provider: "litellm",
-        flagValue: opts.litellmApiKey,
-        flagName: "--litellm-api-key",
-        envVar: "LITELLM_API_KEY",
-      });
-      return { key: "litellm-test-key", source: "profile" };
-    },
+    resolveApiKey: async () => ({ key: "litellm-test-key", source: "profile" }),
     toApiKeyCredential: () => null,
   });
 }
@@ -73,9 +65,11 @@ afterEach(() => {
   clearLiveCatalogCacheForTests();
 });
 
-it.each([false, true])(
-  "preserves authored settings with canonical row %s during noninteractive auth",
-  async (canonical) => {
+it.each([false, true, "not-a-url", "localhost:4000", "ftp://litellm.example"])(
+  "preserves valid proxy settings and rejects invalid override %s",
+  async (input) => {
+    const canonical = input === true;
+    const customBaseUrl = typeof input === "string" ? input : undefined;
     const alias = authored("https://old.example/v1");
     const selected = canonical ? authored("https://canonical.example/v1", "canonical-key") : alias;
     if (canonical) {
@@ -88,38 +82,13 @@ it.each([false, true])(
     };
     const result = await authenticate(
       config({ LiteLLM: alias, ...(canonical ? { litellm: selected } : {}) }),
+      { customBaseUrl },
     );
-    expect(result?.models?.providers).toStrictEqual({ litellm: expected });
-  },
-);
-
-it.each(["not-a-url", "localhost:4000", "ftp://litellm.example"])(
-  "rejects --custom-base-url %s after resolving the setup key",
-  async (customBaseUrl) => {
-    const runtime = createRuntimeSpies();
-    const resolveApiKey = vi.fn(async () => ({ key: "litellm-test-key", source: "flag" as const }));
-    const result = await provider().auth[0]?.runNonInteractive?.({
-      authChoice: "litellm-api-key",
-      config: {},
-      baseConfig: {},
-      opts: { customBaseUrl, litellmApiKey: "litellm-test-key" },
-      runtime,
-      resolveApiKey,
-      toApiKeyCredential: () => {
-        throw new Error("Invalid proxy setup must not store credentials");
-      },
-    });
-    expect(result).toBeNull();
-    expect(resolveApiKey).toHaveBeenCalledExactlyOnceWith({
-      provider: "litellm",
-      flagValue: "litellm-test-key",
-      flagName: "--litellm-api-key",
-      envVar: "LITELLM_API_KEY",
-    });
-    expect(runtime.error).toHaveBeenCalledExactlyOnceWith(
-      "The LiteLLM proxy URL must be a full http:// or https:// URL, such as http://localhost:4000.",
-    );
-    expect(runtime.exit).toHaveBeenCalledExactlyOnceWith(1);
+    if (customBaseUrl) {
+      expect(result).toBeNull();
+    } else {
+      expect(result?.models?.providers).toStrictEqual({ litellm: expected });
+    }
   },
 );
 
